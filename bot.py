@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import pytesseract
@@ -19,6 +20,31 @@ logger = logging.getLogger(__name__)
 # === КОНФИГУРАЦИЯ ===
 BOT_TOKEN = os.environ.get('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 
+# === ПРОВЕРКА УСТАНОВКИ TESSERACT ===
+def check_tesseract():
+    """Проверяет установлен ли Tesseract и устанавливает если нет"""
+    try:
+        # Пытаемся найти путь к tesseract
+        tesseract_path = subprocess.check_output(['which', 'tesseract']).decode().strip()
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        logger.info(f"Tesseract найден: {tesseract_path}")
+        return True
+    except:
+        logger.warning("Tesseract не найден, пытаемся установить...")
+        try:
+            # Устанавливаем tesseract через apt
+            subprocess.run(['apt-get', 'update'], check=True)
+            subprocess.run(['apt-get', 'install', '-y', 'tesseract-ocr', 'tesseract-ocr-rus', 'tesseract-ocr-eng'], check=True)
+            
+            # Обновляем путь
+            tesseract_path = subprocess.check_output(['which', 'tesseract']).decode().strip()
+            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+            logger.info("Tesseract успешно установлен")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка установки Tesseract: {e}")
+            return False
+
 # === ИНЛАЙН КНОПКИ ===
 def get_ocr_keyboard():
     keyboard = [
@@ -31,14 +57,12 @@ def get_ocr_keyboard():
 def get_new_scan_keyboard():
     keyboard = [
         [InlineKeyboardButton("🔄 Распознать другое фото", callback_data="ocr_help")],
-        [InlineKeyboardButton("📋 Скопировать текст", callback_data="copy_text")],
         [InlineKeyboardButton("🏠 В главное меню", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 # === ОБРАБОТЧИКИ КОМАНД ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
     welcome_text = (
         "👋 Привет! Я бот для распознавания текста с изображений.\n\n"
         "📸 Просто отправь мне фотографию с текстом, и я преобразую его в обычный текст.\n\n"
@@ -54,7 +78,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /help"""
     help_text = (
         "📖 Как пользоваться ботом:\n\n"
         "1. 📷 Отправь мне фотографию с текстом\n"
@@ -64,14 +87,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Хорошее освещение\n"
         "• Четкий фокус\n"
         "• Прямой угол съемки\n"
-        "• Черный текст на белом фоне\n"
-        "• Минимум искажений и теней"
+        "• Черный текст на белом фоне"
     )
     await update.message.reply_text(help_text, reply_markup=get_ocr_keyboard())
 
 # === ОБРАБОТЧИКИ ИНЛАЙН КНОПОК ===
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик нажатий на инлайн кнопки"""
     query = update.callback_query
     await query.answer()
     
@@ -83,12 +104,6 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             "1. Сделай фото текста или выбери из галереи\n"
             "2. Отправь фото мне в этот чат\n"
             "3. Я обработаю его и верну текст\n\n"
-            "💡 Советы для лучшего распознавания:\n"
-            "• Хорошее освещение\n"
-            "• Четкий фокус\n"
-            "• Прямой угол съемки\n"
-            "• Черный текст на белом фоне\n"
-            "• Минимум искажений и теней\n\n"
             "Попробуй отправить фото прямо сейчас!"
         )
     elif data == "about":
@@ -98,10 +113,8 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             "• 🖼️ Распознает текст с изображений\n"
             "• 🆓 Использует Tesseract OCR (бесплатно)\n"
             "• ⚡ Быстрая обработка\n"
-            "• 🌍 Работает на Render\n"
-            "• 🔧 Поддержка русского и английского\n\n"
-            "Версия 2.0 - Tesseract Edition\n"
-            "Разработано с ❤️ для удобства"
+            "• 🌍 Работает на Render\n\n"
+            "Версия 2.0 - Tesseract Edition"
         )
     elif data == "support":
         text = (
@@ -110,29 +123,17 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             "• Убедись, что фото четкое\n"
             "• Попробуй другой угол/освещение\n"
             "• Перезапусти бота /start\n\n"
-            "Текст не распознается? Попробуй:\n"
-            "• Черный текст на белом фоне\n"
-            "• Шрифт покрупнее\n"
-            "• Меньше теней и бликов\n"
-            "• Более контрастное изображение\n\n"
             "По вопросам сотрудничества: @username"
         )
     elif data == "main_menu":
-        text = (
-            "🏠 Главное меню\n\n"
-            "Выбери действие:"
-        )
+        text = "🏠 Главное меню\n\nВыбери действие:"
         await query.edit_message_text(text=text, reply_markup=get_ocr_keyboard())
-        return
-    elif data == "copy_text":
-        await query.answer("📋 Скопируйте текст выше", show_alert=True)
         return
     
     await query.edit_message_text(text=text, reply_markup=get_ocr_keyboard())
 
 # === OCR С TESSERACT ===
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик изображений с текстом"""
     if not update.message.photo:
         await update.message.reply_text(
             "Пожалуйста, отправьте изображение с текстом.",
@@ -140,31 +141,27 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Сообщаем пользователю, что началась обработка
     wait_message = await update.message.reply_text("⏳ Обрабатываю изображение...")
 
     try:
-        # Получаем файл изображения (берем самое большое по размеру)
+        # Скачиваем изображение
         photo_file = await update.message.photo[-1].get_file()
-        # Скачиваем изображение в память (как bytes)
         photo_bytes = await photo_file.download_as_bytearray()
         
         # Конвертируем в PIL Image
         image = Image.open(io.BytesIO(photo_bytes))
         
         # Улучшаем изображение для лучшего распознавания
-        # Конвертируем в grayscale (черно-белое)
-        image = image.convert('L')
+        image = image.convert('L')  # В grayscale
         
-        # Распознаем текст с поддержкой русского и английского
+        # Распознаем текст
         extracted_text = pytesseract.image_to_string(image, lang='rus+eng')
         
-        # Проверяем, есть ли распознанный текст
         if extracted_text.strip():
-            # Очищаем текст от лишних пробелов
+            # Очищаем текст
             extracted_text = '\n'.join([line.strip() for line in extracted_text.split('\n') if line.strip()])
             
-            # Обрезаем текст если он слишком длинный (ограничение Telegram ~4096 символов)
+            # Обрезаем если слишком длинный
             if len(extracted_text) > 4000:
                 extracted_text = extracted_text[:4000] + "\n\n... (текст обрезан)"
             
@@ -174,38 +171,19 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await wait_message.edit_text(
                 "❌ Не удалось распознать текст.\n\n"
-                "💡 Попробуй:\n"
+                "Попробуй:\n"
                 "• Более четкое фото\n"
                 "• Хорошее освещение\n"
-                "• Прямой угол съемки\n"
-                "• Черный текст на белом фоне\n"
-                "• Увеличить размер текста",
+                "• Прямой угол съемки",
                 reply_markup=get_ocr_keyboard()
             )
 
     except Exception as e:
         logger.error(f"Error processing image: {e}")
         await wait_message.edit_text(
-            "❌ Произошла ошибка при обработке изображения.\n"
-            "Пожалуйста, попробуйте другое изображение.",
+            "❌ Ошибка при обработке изображения.",
             reply_markup=get_ocr_keyboard()
         )
-
-# === ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ===
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик текстовых сообщений"""
-    text = update.message.text
-    
-    if text.startswith('/'):
-        # Если это команда, игнорируем (обрабатывается другими хендлерами)
-        return
-    
-    await update.message.reply_text(
-        "🤖 Я понимаю только изображения с текстом.\n\n"
-        "Отправь мне фото, и я распознаю с него текст!\n"
-        "Используй кнопки ниже для навигации:",
-        reply_markup=get_ocr_keyboard()
-    )
 
 # === HTTP SERVER ДЛЯ PING ===
 class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
@@ -220,11 +198,9 @@ class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
     
     def log_message(self, format, *args):
-        """Отключаем логирование запросов"""
         return
 
 def run_health_server():
-    """Запускает HTTP сервер для health checks"""
     port = int(os.environ.get('PORT', 8080))
     with socketserver.TCPServer(("", port), HealthCheckHandler) as httpd:
         logger.info(f"Health check server running on port {port}")
@@ -232,23 +208,24 @@ def run_health_server():
 
 # === ОСНОВНАЯ ФУНКЦИЯ ===
 def main():
-    """Запуск бота"""
-    # Создаем Application
+    # Проверяем и устанавливаем Tesseract при необходимости
+    if not check_tesseract():
+        logger.error("Не удалось установить Tesseract. Бот не может работать.")
+        return
+
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Добавляем обработчики
     application.add_handler(MessageHandler(filters.COMMAND & filters.Regex("start"), start))
     application.add_handler(MessageHandler(filters.COMMAND & filters.Regex("help"), help_command))
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_handler(CallbackQueryHandler(handle_button_click))
 
-    # Запускаем HTTP сервер в отдельном потоке
+    # Запускаем HTTP сервер для health checks
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
 
-    # Запускаем бота
-    logger.info("🤖 Бот запущен с Tesseract OCR...")
+    print("🤖 Бот запущен с Tesseract OCR...")
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
